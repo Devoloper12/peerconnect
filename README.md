@@ -1,7 +1,7 @@
 # 🎓 PeerConnect - Student Study Group Management System
 
 > **Academic Object-Oriented Programming (OOP) Capstone Project**  
-> Designed for **MCA / B.Tech Computer Science & Information Technology** students.
+> Designed for **B.Tech Computer Science & Information Technology** students.
 
 ---
 
