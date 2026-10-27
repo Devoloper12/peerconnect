@@ -56,7 +56,7 @@ export function LandingPage() {
         className="academic-card" 
         style={{ 
           textAlign: 'center', 
-          padding: '48px 24px',
+          padding: '36px 16px',
           background: 'linear-gradient(180deg, #ffffff 0%, #f0f7ff 100%)',
           borderColor: '#bfdbfe',
           marginBottom: 32
@@ -80,11 +80,11 @@ export function LandingPage() {
           <TeamOutlined />
         </div>
 
-        <Title style={{ color: '#1e3a8a', fontSize: '2.8rem', fontWeight: 800, margin: '4px 0 6px', letterSpacing: -0.5 }}>
+        <Title style={{ color: '#1e3a8a', fontSize: 'clamp(1.9rem, 6vw, 2.8rem)', fontWeight: 800, margin: '4px 0 6px', letterSpacing: -0.5 }}>
           PeerConnect
         </Title>
 
-        <Title level={3} style={{ color: '#1d4ed8', fontWeight: 700, margin: '0 0 16px', fontSize: '1.4rem' }}>
+        <Title level={3} style={{ color: '#1d4ed8', fontWeight: 700, margin: '0 0 16px', fontSize: 'clamp(1.1rem, 4vw, 1.4rem)' }}>
           Student Study Group Management System
         </Title>
 
@@ -205,10 +205,10 @@ export function LoginPage() {
   };
 
   return (
-    <div style={{ maxWidth: 440, margin: '40px auto' }}>
+    <div style={{ maxWidth: 440, width: '100%', margin: '20px auto', padding: '0 8px' }}>
       <Card 
         className="academic-card"
-        style={{ padding: '16px 20px', borderTop: '4px solid #1d4ed8' }}
+        style={{ padding: '16px 16px', borderTop: '4px solid #1d4ed8' }}
       >
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div 
@@ -358,10 +358,10 @@ export function RegisterPage() {
   };
 
   return (
-    <div style={{ maxWidth: 680, margin: '24px auto' }}>
+    <div style={{ maxWidth: 680, width: '100%', margin: '20px auto', padding: '0 8px' }}>
       <Card 
         className="academic-card"
-        style={{ padding: '20px 24px', borderTop: '4px solid #1d4ed8' }}
+        style={{ padding: '18px 16px', borderTop: '4px solid #1d4ed8' }}
       >
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div 
@@ -483,7 +483,7 @@ export function RegisterPage() {
                 </Form.Item>
               </Col>
 
-              <Col xs={12} sm={6}>
+              <Col xs={24} sm={12} md={6}>
                 <Form.Item 
                   label={<span style={{ fontWeight: 600, color: '#1e293b' }}>Year</span>} 
                   name="year" 
@@ -497,7 +497,7 @@ export function RegisterPage() {
                 </Form.Item>
               </Col>
 
-              <Col xs={12} sm={6}>
+              <Col xs={24} sm={12} md={6}>
                 <Form.Item 
                   label={<span style={{ fontWeight: 600, color: '#1e293b' }}>Semester</span>} 
                   name="semester" 

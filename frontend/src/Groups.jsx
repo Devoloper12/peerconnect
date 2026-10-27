@@ -494,7 +494,7 @@ export function CreateGroupPage() {
               </Form.Item>
             </Col>
 
-            <Col xs={12} sm={6}>
+            <Col xs={24} sm={12} md={6}>
               <Form.Item 
                 label={<span style={{ fontWeight: 600, color: '#1e293b' }}>Department</span>} 
                 name="department"
@@ -505,7 +505,7 @@ export function CreateGroupPage() {
               </Form.Item>
             </Col>
 
-            <Col xs={12} sm={6}>
+            <Col xs={24} sm={12} md={6}>
               <Form.Item 
                 label={<span style={{ fontWeight: 600, color: '#1e293b' }}>Semester</span>} 
                 name="semester"
@@ -894,7 +894,7 @@ export function SessionSchedulerPage() {
                 </Form.Item>
 
                 <Row gutter={16}>
-                  <Col span={12}>
+                  <Col xs={24} sm={12}>
                     <Form.Item 
                       label={<span style={{ fontWeight: 600, color: '#1e293b' }}>Date (YYYY-MM-DD)</span>} 
                       name="date" 
@@ -909,7 +909,7 @@ export function SessionSchedulerPage() {
                       />
                     </Form.Item>
                   </Col>
-                  <Col span={12}>
+                  <Col xs={24} sm={12}>
                     <Form.Item 
                       label={<span style={{ fontWeight: 600, color: '#1e293b' }}>Time Slot</span>} 
                       name="time" 
@@ -1078,6 +1078,17 @@ export function ChatsPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+
+  // Mobile detection for WhatsApp-style responsive layout
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Conversations state
   const [personalChats, setPersonalChats] = useState([]);
@@ -1353,7 +1364,7 @@ export function ChatsPage() {
   });
 
   return (
-    <div style={{ height: 'calc(100vh - 150px)', minHeight: 600 }}>
+    <div style={{ height: isMobile ? 'calc(100vh - 100px)' : 'calc(100vh - 150px)', minHeight: isMobile ? 480 : 600 }}>
       {/* Hidden File Input for Attachments */}
       <input
         type="file"
@@ -1370,12 +1381,13 @@ export function ChatsPage() {
         {/* LEFT COLUMN: CONVERSATION LIST */}
         <div
           style={{
-            width: 340,
-            borderRight: '1px solid #e2e8f0',
-            display: 'flex',
+            width: isMobile ? '100%' : 320,
+            display: isMobile && activeChat ? 'none' : 'flex',
+            borderRight: isMobile ? 'none' : '1px solid #e2e8f0',
             flexDirection: 'column',
             height: '100%',
-            background: '#ffffff'
+            background: '#ffffff',
+            flexShrink: 0
           }}
         >
           {/* Header & New Chat button */}
@@ -1641,10 +1653,12 @@ export function ChatsPage() {
         <div
           style={{
             flex: 1,
-            display: 'flex',
+            width: isMobile ? '100%' : 'auto',
+            display: isMobile && !activeChat ? 'none' : 'flex',
             flexDirection: 'column',
             height: '100%',
-            background: '#f8fafc'
+            background: '#f8fafc',
+            overflow: 'hidden'
           }}
         >
           {activeChat ? (
@@ -1652,19 +1666,43 @@ export function ChatsPage() {
               {/* Chat Top Header */}
               <div
                 style={{
-                  padding: '14px 20px',
+                  padding: isMobile ? '10px 14px' : '14px 20px',
                   background: '#ffffff',
                   borderBottom: '1px solid #e2e8f0',
                   display: 'flex',
                   justifyContent: 'space-between',
-                  alignItems: 'center'
+                  alignItems: 'center',
+                  gap: 8
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  {isMobile && (
+                    <Button
+                      type="text"
+                      icon={<ArrowLeftOutlined style={{ fontSize: 18, color: '#1e3a8a' }} />}
+                      onClick={() => {
+                        setActiveChat(null);
+                        setSearchParams({});
+                      }}
+                      style={{
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 38,
+                        width: 38,
+                        borderRadius: '50%',
+                        flexShrink: 0
+                      }}
+                      aria-label="Back to conversations"
+                    />
+                  )}
+
                   <Avatar
                     style={{
                       backgroundColor: activeChat.chatType === 'GROUP' ? '#1e3a8a' : '#1d4ed8',
-                      fontWeight: 700
+                      fontWeight: 700,
+                      flexShrink: 0
                     }}
                     icon={activeChat.chatType === 'GROUP' ? <TeamOutlined /> : null}
                   >
@@ -1672,25 +1710,27 @@ export function ChatsPage() {
                       (activeChat.title ? activeChat.title.charAt(0).toUpperCase() : 'U')}
                   </Avatar>
 
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {activeChat.title}
                       </span>
                       <Tag
                         color={activeChat.chatType === 'GROUP' ? 'blue' : 'cyan'}
-                        style={{ fontSize: 11, margin: 0, fontWeight: 600 }}
+                        style={{ fontSize: 10, margin: 0, fontWeight: 600 }}
                       >
-                        {activeChat.chatType === 'GROUP' ? 'Study Group' : 'Peer Student'}
+                        {activeChat.chatType === 'GROUP' ? 'Group' : 'Peer'}
                       </Tag>
                     </div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>{activeChat.subtitle}</div>
+                    <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {activeChat.subtitle}
+                    </div>
                   </div>
                 </div>
 
                 {activeChat.chatType === 'GROUP' && (
-                  <Button size="small" type="default" onClick={() => navigate('/scheduler')}>
-                    🗓️ Schedule Session
+                  <Button size="small" type="default" onClick={() => navigate('/scheduler')} style={{ flexShrink: 0 }}>
+                    🗓️ <span className="desktop-only">Schedule</span>
                   </Button>
                 )}
               </div>
@@ -1770,7 +1810,7 @@ export function ChatsPage() {
                         {/* Message Bubble */}
                         <div
                           style={{
-                            maxWidth: '70%',
+                            maxWidth: isMobile ? '86%' : '70%',
                             padding: '10px 14px',
                             borderRadius: isMe ? '16px 16px 2px 16px' : '16px 16px 16px 2px',
                             background: isMe ? '#1d4ed8' : '#ffffff',
@@ -1959,15 +1999,18 @@ export function ChatsPage() {
                 </div>
               )}
 
-              {/* Chat Input Bar */}
+              {/* Chat Input Bar - Sticky & Touch-Friendly */}
               <div
                 style={{
-                  padding: '14px 20px',
+                  padding: isMobile ? '10px 12px' : '14px 20px',
                   background: '#ffffff',
                   borderTop: selectedAttachment ? 'none' : '1px solid #e2e8f0',
                   display: 'flex',
-                  gap: 10,
-                  alignItems: 'flex-end'
+                  gap: 8,
+                  alignItems: 'flex-end',
+                  position: 'sticky',
+                  bottom: 0,
+                  zIndex: 10
                 }}
               >
                 {/* Paperclip Button for file upload */}
@@ -1979,8 +2022,14 @@ export function ChatsPage() {
                     onClick={() => fileInputRef.current?.click()}
                     style={{
                       borderColor: selectedAttachment ? '#1d4ed8' : '#cbd5e1',
-                      color: selectedAttachment ? '#1d4ed8' : '#64748b'
+                      color: selectedAttachment ? '#1d4ed8' : '#64748b',
+                      minWidth: 44,
+                      minHeight: 44,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
                     }}
+                    aria-label="Attach file"
                   />
                 </Tooltip>
 
@@ -1995,11 +2044,11 @@ export function ChatsPage() {
                   }}
                   placeholder={
                     selectedAttachment
-                      ? 'Add a caption for your attachment... (press Enter to send)'
-                      : 'Type a message... (press Enter to send)'
+                      ? 'Add caption... (Enter to send)'
+                      : 'Type a message... (Enter to send)'
                   }
                   autoSize={{ minRows: 1, maxRows: 4 }}
-                  style={{ borderRadius: 8, fontSize: 14 }}
+                  style={{ borderRadius: 8, fontSize: 14, minHeight: 44 }}
                 />
 
                 <Button
@@ -2009,9 +2058,17 @@ export function ChatsPage() {
                   loading={sending}
                   onClick={handleSendMessage}
                   disabled={!inputText.trim() && !selectedAttachment}
-                  style={{ fontWeight: 700 }}
+                  style={{
+                    fontWeight: 700,
+                    minWidth: 44,
+                    minHeight: 44,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  aria-label="Send message"
                 >
-                  Send
+                  <span className="desktop-only">Send</span>
                 </Button>
               </div>
             </>

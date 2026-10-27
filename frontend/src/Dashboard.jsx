@@ -177,13 +177,13 @@ export function StudentDashboard() {
       >
         <Row justify="space-between" align="middle" gutter={[16, 16]}>
           <Col xs={24}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-              <Avatar size={64} style={{ backgroundColor: '#1d4ed8', fontSize: 26, fontWeight: 700, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+              <Avatar size={58} style={{ backgroundColor: '#1d4ed8', fontSize: 24, fontWeight: 700, flexShrink: 0 }}>
                 {user?.name ? user.name.charAt(0).toUpperCase() : 'S'}
               </Avatar>
 
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <Title level={3} style={{ color: '#1e3a8a', margin: 0, fontWeight: 800 }}>
                     Welcome, {user?.name || 'Student'}!
                   </Title>
@@ -336,14 +336,16 @@ export function StudentDashboard() {
                     style={{
                       border: '1px solid #e2e8f0',
                       borderRadius: 8,
-                      padding: '12px 16px',
+                      padding: '12px 14px',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      background: '#ffffff'
+                      background: '#ffffff',
+                      flexWrap: 'wrap',
+                      gap: 12
                     }}
                   >
-                    <div>
+                    <div style={{ flex: 1, minWidth: 200 }}>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <Tag color="blue">{grp.subject}</Tag>
                         {grp.semester && <Tag color="cyan">{grp.semester}</Tag>}
@@ -677,7 +679,7 @@ export function ProfileManagementPage() {
               </Form.Item>
             </Col>
 
-            <Col xs={12} sm={6}>
+            <Col xs={24} sm={12} md={6}>
               <Form.Item 
                 label={<span style={{ fontWeight: 600, color: '#1e293b' }}>Year</span>} 
                 name="year"
@@ -688,7 +690,7 @@ export function ProfileManagementPage() {
               </Form.Item>
             </Col>
 
-            <Col xs={12} sm={6}>
+            <Col xs={24} sm={12} md={6}>
               <Form.Item 
                 label={<span style={{ fontWeight: 600, color: '#1e293b' }}>Semester</span>} 
                 name="semester"
@@ -1040,9 +1042,9 @@ export function NotificationsPage() {
                   boxShadow: isUnread ? '0 2px 8px rgba(29, 78, 216, 0.08)' : 'none'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
                   {/* Left: Icon & Content */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 220 }}>
                     <div
                       style={{
                         width: 44,
