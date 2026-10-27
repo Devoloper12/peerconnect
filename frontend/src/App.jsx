@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   ConfigProvider, theme, Layout, Button, Avatar, Tag, Typography, Divider, Menu, Badge, Modal
@@ -32,6 +32,119 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/login" replace />;
   }
   return children;
+}
+
+// Windows Taskbar Style Auto-Hide Footer Component
+function WindowsTaskbarFooter({ creditsOpen, setCreditsOpen }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      // Reveal taskbar when mouse reaches within 14px of the bottom edge of the browser window
+      if (window.innerHeight - e.clientY <= 14) {
+        setVisible(true);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  useEffect(() => {
+    // When credits modal is closed, auto-hide taskbar
+    if (!creditsOpen) {
+      setVisible(false);
+    }
+  }, [creditsOpen]);
+
+  return (
+    <>
+      {/* Invisible Bottom Edge Hit Zone for Immediate Sensor Trigger */}
+      <div
+        onMouseEnter={() => setVisible(true)}
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 12,
+          zIndex: 999,
+          background: 'transparent',
+          pointerEvents: visible ? 'none' : 'auto'
+        }}
+      />
+
+      {/* Windows Taskbar Style Auto-Hide Footer */}
+      <Footer
+        onMouseEnter={() => setVisible(true)}
+        onMouseLeave={() => {
+          if (!creditsOpen) {
+            setVisible(false);
+          }
+        }}
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1000,
+          background: 'rgba(255, 255, 255, 0.98)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderTop: '1px solid #e2e8f0',
+          boxShadow: visible ? '0 -4px 16px rgba(15, 23, 42, 0.08)' : 'none',
+          padding: '12px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 16,
+          flexWrap: 'wrap',
+          transform: visible ? 'translateY(0)' : 'translateY(100%)',
+          transition: 'transform 380ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 380ms ease',
+          userSelect: 'none'
+        }}
+      >
+        <span style={{ fontWeight: 700, color: '#1e3a8a', fontSize: 14, letterSpacing: '-0.01em' }}>
+          PeerConnect — Student Study Group Management System
+        </span>
+
+        <Tag
+          color="blue"
+          style={{
+            fontWeight: 700,
+            borderRadius: 12,
+            padding: '2px 10px',
+            fontSize: 11,
+            margin: 0,
+            border: '1px solid #bfdbfe'
+          }}
+        >
+          B.Tech S3 OOP Project • Group 1
+        </Tag>
+
+        <Button
+          type="default"
+          size="middle"
+          icon={<TeamOutlined style={{ color: '#1d4ed8' }} />}
+          onClick={() => setCreditsOpen(true)}
+          style={{
+            fontWeight: 700,
+            color: '#1d4ed8',
+            borderColor: '#bfdbfe',
+            background: '#eff6ff',
+            borderRadius: 20,
+            padding: '0 18px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            boxShadow: '0 1px 2px rgba(29, 78, 216, 0.05)'
+          }}
+        >
+          Project Credits
+        </Button>
+      </Footer>
+    </>
+  );
 }
 
 function MainLayout() {
@@ -296,38 +409,8 @@ function MainLayout() {
             </Routes>
           </Content>
 
-          <Footer style={{ textAlign: 'center', background: '#ffffff', borderTop: '1px solid #e2e8f0', color: '#64748b', padding: '20px 24px', fontSize: 13 }}>
-            <div style={{ fontWeight: 700, color: '#1e3a8a', fontSize: 14, marginBottom: 4 }}>
-              PeerConnect — Student Study Group Management System
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <Tag color="blue" style={{ fontWeight: 700, borderRadius: 12, padding: '1px 10px' }}>
-                B.Tech S3 OOP Project • Group 1
-              </Tag>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, margin: '0 auto' }}>
-              <Button 
-                type="default" 
-                size="middle"
-                icon={<TeamOutlined style={{ color: '#1d4ed8' }} />}
-                onClick={() => setCreditsOpen(true)}
-                style={{ 
-                  fontWeight: 700, 
-                  color: '#1d4ed8', 
-                  borderColor: '#bfdbfe',
-                  background: '#eff6ff',
-                  borderRadius: 20,
-                  padding: '0 18px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  boxShadow: '0 1px 2px rgba(29, 78, 216, 0.05)'
-                }}
-              >
-                Project Credits
-              </Button>
-            </div>
-          </Footer>
+          {/* Windows Taskbar Style Auto-Hide Footer */}
+          <WindowsTaskbarFooter creditsOpen={creditsOpen} setCreditsOpen={setCreditsOpen} />
 
           {/* Project Credits Modal */}
           <Modal
@@ -412,9 +495,16 @@ export default function App() {
           colorInfo: '#0284c7',          // Sky Blue
           colorLink: '#1d4ed8',
           colorBgBase: '#ffffff',
-          colorBorder: '#cbd5e1',
+          colorBorder: '#e2e8f0',
           borderRadius: 8,
           fontFamily: "'Plus Jakarta Sans', sans-serif"
+        },
+        components: {
+          Layout: {
+            siderBg: '#ffffff',
+            triggerBg: '#ffffff',
+            triggerColor: '#1e3a8a'
+          }
         }
       }}
     >

@@ -40,6 +40,23 @@
   color: #ffffff !important;
 }
 
+/* Sidebar Collapse Trigger Styling - Clean Academic White & Navy */
+.academic-sider .ant-layout-sider-trigger,
+.ant-layout-sider-trigger {
+  background: #ffffff !important;
+  color: #1e3a8a !important;
+  border-top: 1px solid #e2e8f0 !important;
+  border-right: 1px solid #e2e8f0 !important;
+  font-weight: 700 !important;
+  transition: all 0.2s ease !important;
+}
+
+.academic-sider .ant-layout-sider-trigger:hover,
+.ant-layout-sider-trigger:hover {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
 .authenticated-page-wrapper {
   max-width: 1300px;
   margin: 0 auto;
