@@ -599,6 +599,86 @@ class SessionScheduler {
     return sessionDt.getTime() < Date.now();
   }
 
+  static parseTimePart(timeStr = '') {
+    let hours = 23;
+    let minutes = 59;
+    if (timeStr && typeof timeStr === 'string' && timeStr.trim().length > 0) {
+      const trimmed = timeStr.trim().toUpperCase();
+      const isPM = trimmed.includes('PM');
+      const isAM = trimmed.includes('AM');
+      const cleaned = trimmed.replace(/[APM\s]/g, '');
+      const parts = cleaned.split(':');
+      if (parts.length >= 2) {
+        let h = parseInt(parts[0], 10) || 0;
+        const m = parseInt(parts[1], 10) || 0;
+        if (isPM && h < 12) h += 12;
+        else if (isAM && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+    return { hours, minutes };
+  }
+
+  static parseNotificationDateTime(msg) {
+    if (!msg || typeof msg !== 'string') return null;
+
+    // Pattern 1: "scheduled for 10/28/2026 at 8:00 AM"
+    let m = msg.match(/scheduled for\s+([^\s]+)\s+at\s+([^.]+)/i);
+    if (m) {
+      const dateStr = m[1].trim();
+      const timeStr = m[2].trim();
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        const { hours, minutes } = SessionScheduler.parseTimePart(timeStr);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes, 0, 0);
+      }
+    }
+
+    // Pattern 2: "on Wed, Oct 28, 2026 at 8:00 AM." or "on Mon, Oct 26, 2026 at 5:15."
+    m = msg.match(/on\s+(?:[A-Za-z]+,\s*)?([A-Za-z]+\s+\d{1,2},\s*\d{4})\s+at\s+([^.]+)/i);
+    if (m) {
+      const dateStr = m[1].trim();
+      const timeStr = m[2].trim();
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        const { hours, minutes } = SessionScheduler.parseTimePart(timeStr);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes, 0, 0);
+      }
+    }
+
+    // Pattern 3: General fallback "on <datePart> at <timePart>"
+    m = msg.match(/on\s+([^.]+?)\s+at\s+([^.]+)/i);
+    if (m) {
+      const dateStr = m[1].trim().replace(/^[A-Za-z]+,\s*/, '');
+      const timeStr = m[2].trim();
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        const { hours, minutes } = SessionScheduler.parseTimePart(timeStr);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes, 0, 0);
+      }
+    }
+
+    return null;
+  }
+
+  static isNotificationExpired(notif, activeSessionIds = null) {
+    if (!notif) return false;
+    if (!['SESSION', 'SESSION_REMINDER'].includes(notif.type)) return false;
+
+    if (notif.sessionId && activeSessionIds) {
+      if (!activeSessionIds.has(String(notif.sessionId))) {
+        return true;
+      }
+    }
+
+    const dt = SessionScheduler.parseNotificationDateTime(notif.message);
+    if (dt) {
+      return dt.getTime() < Date.now();
+    }
+    return false;
+  }
+
   static formatDisplay(date, time) {
     try {
       const d = new Date(date);
@@ -1024,6 +1104,20 @@ const getProfile = async (req, res, next) => {
 
     if (expiredIds.length > 0) {
       await Session.deleteMany({ _id: { $in: expiredIds } });
+    }
+
+    // Clean ended session reminders and notifications for this student
+    const activeSessionIds = new Set(upcomingSessions.map(s => String(s._id)));
+    const studentSessionNotifs = await Notification.find({
+      studentId,
+      type: { $in: ['SESSION', 'SESSION_REMINDER'] }
+    });
+    const expiredNotifIds = studentSessionNotifs
+      .filter(n => SessionScheduler.isNotificationExpired(n, activeSessionIds))
+      .map(n => n._id);
+
+    if (expiredNotifIds.length > 0) {
+      await Notification.deleteMany({ _id: { $in: expiredNotifIds } });
     }
 
     const notifications = await Notification.find({ studentId }).sort({ createdAt: -1 });
@@ -1492,6 +1586,7 @@ const createSession = async (req, res, next) => {
     const memberIds = (group.members || []).map(m => m._id);
     const notifications = memberIds.map(mId => ({
       studentId: mId,
+      sessionId: session._id,
       title: 'New Study Session Scheduled',
       message: `📅 New session scheduled in "${group.groupName}": "${session.topic}" on ${SessionScheduler.formatDisplay(date, time)}.`,
       type: 'SESSION',
@@ -1569,17 +1664,33 @@ const clearExpiredSessions = async (req, res, next) => {
       await Session.deleteMany({ _id: { $in: expiredIds } });
     }
 
+    const remainingSessions = await Session.find({});
+    const activeSessionIds = new Set(remainingSessions.map(s => String(s._id)));
+
+    // Purge ended session reminders and notifications
+    const sessionNotifs = await Notification.find({
+      type: { $in: ['SESSION', 'SESSION_REMINDER'] }
+    });
+    const expiredNotifIds = sessionNotifs
+      .filter(n => SessionScheduler.isNotificationExpired(n, activeSessionIds))
+      .map(n => n._id);
+
+    if (expiredNotifIds.length > 0) {
+      await Notification.deleteMany({ _id: { $in: expiredNotifIds } });
+    }
+
     return res.status(200).json({
       success: true,
-      message: `Cleared ${expiredIds.length} expired study session(s).`,
-      clearedCount: expiredIds.length
+      message: `Cleared ${expiredIds.length} expired session(s) and ${expiredNotifIds.length} ended session reminder(s).`,
+      clearedSessionsCount: expiredIds.length,
+      clearedRemindersCount: expiredNotifIds.length
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Background recurring task: Automatically clears expired sessions from MongoDB
+// Background recurring task: Automatically clears expired sessions and ended reminders from MongoDB
 const runExpiredSessionsCleaner = async () => {
   try {
     const allSessions = await Session.find({});
@@ -1590,6 +1701,22 @@ const runExpiredSessionsCleaner = async () => {
     if (expiredIds.length > 0) {
       await Session.deleteMany({ _id: { $in: expiredIds } });
       console.log(`[Scheduled Cleaner] Automatically purged ${expiredIds.length} expired study session(s) past date & time.`);
+    }
+
+    const remainingSessions = await Session.find({});
+    const activeSessionIds = new Set(remainingSessions.map(s => String(s._id)));
+
+    // Clear ended session reminders and session notifications
+    const sessionNotifs = await Notification.find({
+      type: { $in: ['SESSION', 'SESSION_REMINDER'] }
+    });
+    const expiredNotifIds = sessionNotifs
+      .filter(n => SessionScheduler.isNotificationExpired(n, activeSessionIds))
+      .map(n => n._id);
+
+    if (expiredNotifIds.length > 0) {
+      await Notification.deleteMany({ _id: { $in: expiredNotifIds } });
+      console.log(`[Scheduled Cleaner] Automatically purged ${expiredNotifIds.length} ended session reminder(s)/notification(s).`);
     }
   } catch (err) {
     console.error('[Scheduled Cleaner Error]', err.message);
@@ -1624,6 +1751,9 @@ const getNotifications = async (req, res, next) => {
         }).populate('groupId', 'groupName');
 
         for (const sess of upcomingSessions) {
+          // Never create reminders for sessions that have already ended
+          if (SessionScheduler.isSessionExpired(sess)) continue;
+
           const sessDateStr = new Date(sess.date).toLocaleDateString();
           const existingReminder = await Notification.findOne({
             studentId,
@@ -1634,6 +1764,7 @@ const getNotifications = async (req, res, next) => {
           if (!existingReminder) {
             await Notification.create({
               studentId,
+              sessionId: sess._id,
               title: 'Upcoming Session Reminder',
               message: `⏰ Reminder: Study session on "${sess.topic}" (${sess.groupId?.groupName || 'Group'}) is scheduled for ${sessDateStr} at ${sess.time}.`,
               type: 'SESSION_REMINDER',
@@ -1644,6 +1775,25 @@ const getNotifications = async (req, res, next) => {
       }
     } catch (err) {
       console.warn('Session reminder check notice:', err.message);
+    }
+
+    // Proactively purge ended session reminders for this student before returning list
+    try {
+      const activeSessions = await Session.find({});
+      const activeSessionIds = new Set(activeSessions.map(s => String(s._id)));
+      const studentSessionNotifs = await Notification.find({
+        studentId,
+        type: { $in: ['SESSION', 'SESSION_REMINDER'] }
+      });
+      const expiredNotifIds = studentSessionNotifs
+        .filter(n => SessionScheduler.isNotificationExpired(n, activeSessionIds))
+        .map(n => n._id);
+
+      if (expiredNotifIds.length > 0) {
+        await Notification.deleteMany({ _id: { $in: expiredNotifIds } });
+      }
+    } catch (purgeErr) {
+      console.warn('Purge notice in getNotifications:', purgeErr.message);
     }
 
     const notifications = await Notification.find({ studentId })

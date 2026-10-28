@@ -44,7 +44,7 @@ import {
   DeleteOutlined
 } from '@ant-design/icons';
 import { useAuth } from './context/AuthContext';
-import { useNotifications } from './context/NotificationContext';
+import { useNotifications, isNotificationActive } from './context/NotificationContext';
 import { getMyGroupsApi, getSessionsApi, updateProfileApi } from './api/client';
 import { GroupMembersModal } from './Groups';
 import {
@@ -104,6 +104,7 @@ export const isSessionUpcoming = (session) => {
 export function StudentDashboard() {
   const { user } = useAuth();
   const { notifications, unreadCount } = useNotifications();
+  const activeNotifications = (notifications || []).filter(isNotificationActive);
   const navigate = useNavigate();
   const [myGroups, setMyGroups] = useState([]);
   const [upcomingSessions, setUpcomingSessions] = useState([]);
@@ -451,14 +452,14 @@ export function StudentDashboard() {
               </Button>
             }
           >
-            {notifications.length === 0 ? (
+            {activeNotifications.length === 0 ? (
               <Empty 
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description="No academic notifications yet. You will see session reminders, group updates, and match invites here." 
               />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {notifications.slice(0, 4).map(item => {
+                {activeNotifications.slice(0, 4).map(item => {
                   const cfg = getTypeConfig(item.type);
                   return (
                     <div
@@ -956,13 +957,15 @@ export function NotificationsPage() {
   };
 
   // Filter list by tab
-  const filteredNotifications = notifications.filter(n => {
-    if (activeTab === 'UNREAD') return !n.read;
-    if (activeTab === 'SESSIONS') return ['SESSION', 'SESSION_REMINDER'].includes(n.type);
-    if (activeTab === 'GROUPS') return ['GROUP_UPDATE', 'MEMBER_JOINED', 'JOIN', 'JOIN_REQUEST'].includes(n.type);
-    if (activeTab === 'PARTNERS') return ['PARTNER_MATCH', 'INVITATION'].includes(n.type);
-    return true;
-  });
+  const filteredNotifications = notifications
+    .filter(isNotificationActive)
+    .filter(n => {
+      if (activeTab === 'UNREAD') return !n.read;
+      if (activeTab === 'SESSIONS') return ['SESSION', 'SESSION_REMINDER'].includes(n.type);
+      if (activeTab === 'GROUPS') return ['GROUP_UPDATE', 'MEMBER_JOINED', 'JOIN', 'JOIN_REQUEST'].includes(n.type);
+      if (activeTab === 'PARTNERS') return ['PARTNER_MATCH', 'INVITATION'].includes(n.type);
+      return true;
+    });
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>

@@ -7,6 +7,10 @@ const notificationSchema = new mongoose.Schema(
       ref: 'Student',
       required: true
     },
+    sessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Session'
+    },
     title: {
       type: String,
       trim: true,
