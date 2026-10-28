@@ -553,6 +553,52 @@ class SessionScheduler {
     return true;
   }
 
+  static parseSessionDateTime(dateVal, timeStr = '') {
+    if (!dateVal) return null;
+    let year, monthIndex, day;
+
+    const str = dateVal instanceof Date ? dateVal.toISOString() : String(dateVal);
+    const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      year = parseInt(match[1], 10);
+      monthIndex = parseInt(match[2], 10) - 1;
+      day = parseInt(match[3], 10);
+    } else {
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return null;
+      year = d.getFullYear();
+      monthIndex = d.getMonth();
+      day = d.getDate();
+    }
+
+    let hours = 23;
+    let minutes = 59;
+    if (timeStr && typeof timeStr === 'string' && timeStr.trim().length > 0) {
+      const trimmed = timeStr.trim().toUpperCase();
+      const isPM = trimmed.includes('PM');
+      const isAM = trimmed.includes('AM');
+      const cleaned = trimmed.replace(/[APM\s]/g, '');
+      const parts = cleaned.split(':');
+      if (parts.length >= 2) {
+        let h = parseInt(parts[0], 10) || 0;
+        const m = parseInt(parts[1], 10) || 0;
+        if (isPM && h < 12) h += 12;
+        else if (isAM && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+
+    return new Date(year, monthIndex, day, hours, minutes, 0, 0);
+  }
+
+  static isSessionExpired(session) {
+    if (!session || !session.date) return true;
+    const sessionDt = SessionScheduler.parseSessionDateTime(session.date, session.time);
+    if (!sessionDt) return true;
+    return sessionDt.getTime() < Date.now();
+  }
+
   static formatDisplay(date, time) {
     try {
       const d = new Date(date);
@@ -960,9 +1006,26 @@ const getProfile = async (req, res, next) => {
   try {
     const studentId = req.student._id;
     const userGroups = await Group.find({ members: studentId }).populate('createdBy', 'name email');
-    const upcomingSessions = await Session.find({
+    
+    // Automatically clear expired sessions
+    const allSessions = await Session.find({
       groupId: { $in: userGroups.map(g => g._id) }
     }).sort({ date: 1, time: 1 });
+
+    const expiredIds = [];
+    const upcomingSessions = [];
+    for (const s of allSessions) {
+      if (SessionScheduler.isSessionExpired(s)) {
+        expiredIds.push(s._id);
+      } else {
+        upcomingSessions.push(s);
+      }
+    }
+
+    if (expiredIds.length > 0) {
+      await Session.deleteMany({ _id: { $in: expiredIds } });
+    }
+
     const notifications = await Notification.find({ studentId }).sort({ createdAt: -1 });
 
     const dashboardMetrics = req.oopUser.getDashboardMetrics({
@@ -1071,8 +1134,8 @@ const getGroups = async (req, res, next) => {
     }
 
     const groups = await Group.find(query)
-      .populate('createdBy', 'name email')
-      .populate('members', 'name email subjects interests learningPreference')
+      .populate('createdBy', 'name email department semester')
+      .populate('members', 'name email department semester academicInterests subjects interests learningPreferences')
       .sort({ createdAt: -1 });
 
     const studentProfile = req.student ? {
@@ -1089,10 +1152,36 @@ const getGroups = async (req, res, next) => {
 
     const enrichedGroups = groups.map(grp => {
       const gObj = grp.toObject();
+      const memberCount = gObj.members ? gObj.members.length : 0;
+      const isMember = req.student ? (
+        GroupManager.isStudentMember(gObj, req.student._id) ||
+        (gObj.createdBy && gObj.createdBy._id && gObj.createdBy._id.toString() === req.student._id.toString())
+      ) : false;
+
+      gObj.memberCount = memberCount;
       gObj.isFull = GroupManager.isGroupAtCapacity(gObj);
-      gObj.isMember = req.student ? GroupManager.isStudentMember(gObj, req.student._id) : false;
+      gObj.isMember = isMember;
       gObj.isCreator = req.student ? (gObj.createdBy && gObj.createdBy._id.toString() === req.student._id.toString()) : false;
       gObj.matchScore = studentProfile ? GroupManager.calculateCompatibility(studentProfile, gObj) : 75;
+
+      // Privacy Enforcement: Only group members can view the member list
+      if (!isMember) {
+        gObj.members = []; // Hide member list from non-members
+        gObj.isMembersVisible = false;
+        gObj.privacyNotice = 'Member list visible after joining the group.';
+      } else {
+        gObj.isMembersVisible = true;
+        gObj.members = (gObj.members || []).map(m => ({
+          _id: m._id,
+          name: m.name,
+          email: m.email,
+          department: m.department || gObj.department || 'Computer Science & Engineering',
+          semester: m.semester || gObj.semester || 'S3',
+          academicInterests: (m.academicInterests && m.academicInterests.length > 0) ? m.academicInterests : (m.subjects || []),
+          isCreator: gObj.createdBy && (gObj.createdBy._id ? gObj.createdBy._id.toString() : gObj.createdBy.toString()) === m._id.toString()
+        }));
+      }
+
       return gObj;
     });
 
@@ -1179,6 +1268,22 @@ const joinGroup = async (req, res, next) => {
 
     group.members.push(studentId);
     await group.save();
+    await group.populate('createdBy', 'name email department semester');
+    await group.populate('members', 'name email department semester academicInterests subjects');
+
+    const gObj = group.toObject();
+    gObj.memberCount = gObj.members ? gObj.members.length : 0;
+    gObj.isMember = true;
+    gObj.isMembersVisible = true;
+    gObj.members = (gObj.members || []).map(m => ({
+      _id: m._id,
+      name: m.name,
+      email: m.email,
+      department: m.department || gObj.department || 'Computer Science & Engineering',
+      semester: m.semester || gObj.semester || 'S3',
+      academicInterests: (m.academicInterests && m.academicInterests.length > 0) ? m.academicInterests : (m.subjects || []),
+      isCreator: gObj.createdBy && (gObj.createdBy._id ? gObj.createdBy._id.toString() : gObj.createdBy.toString()) === m._id.toString()
+    }));
 
     await Notification.create({
       studentId,
@@ -1188,8 +1293,12 @@ const joinGroup = async (req, res, next) => {
       read: false
     });
 
-    const existingMembers = (group.members || []).filter(m => m.toString() !== studentId.toString());
-    for (const mId of existingMembers) {
+    const existingMembers = (group.members || []).filter(m => {
+      const mId = m._id ? m._id.toString() : m.toString();
+      return mId !== studentId.toString();
+    });
+    for (const m of existingMembers) {
+      const mId = m._id || m;
       await Notification.create({
         studentId: mId,
         title: 'New Member Joined Group',
@@ -1202,7 +1311,7 @@ const joinGroup = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: `Successfully joined ${group.groupName}!`,
-      group
+      group: gObj
     });
   } catch (error) {
     next(error);
@@ -1250,21 +1359,91 @@ const getMyGroups = async (req, res, next) => {
   try {
     const studentId = req.student._id;
     const groupsCreated = await Group.find({ createdBy: studentId })
-      .populate('members', 'name email subjects')
+      .populate('createdBy', 'name email department semester')
+      .populate('members', 'name email department semester academicInterests subjects')
       .sort({ createdAt: -1 });
 
     const groupsJoined = await Group.find({ members: studentId })
-      .populate('createdBy', 'name email')
-      .populate('members', 'name email')
+      .populate('createdBy', 'name email department semester')
+      .populate('members', 'name email department semester academicInterests subjects')
       .sort({ createdAt: -1 });
+
+    const formatGroup = (grp) => {
+      const gObj = grp.toObject();
+      gObj.memberCount = gObj.members ? gObj.members.length : 0;
+      gObj.isMember = true;
+      gObj.isMembersVisible = true;
+      gObj.members = (gObj.members || []).map(m => ({
+        _id: m._id,
+        name: m.name,
+        email: m.email,
+        department: m.department || gObj.department || 'Computer Science & Engineering',
+        semester: m.semester || gObj.semester || 'S3',
+        academicInterests: (m.academicInterests && m.academicInterests.length > 0) ? m.academicInterests : (m.subjects || []),
+        isCreator: gObj.createdBy && (gObj.createdBy._id ? gObj.createdBy._id.toString() : gObj.createdBy.toString()) === m._id.toString()
+      }));
+      return gObj;
+    };
+
+    const formattedCreated = groupsCreated.map(formatGroup);
+    const formattedJoined = groupsJoined.map(formatGroup);
 
     return res.status(200).json({
       success: true,
-      createdCount: groupsCreated.length,
-      joinedCount: groupsJoined.length,
-      groups: groupsJoined,
-      groupsCreated,
-      groupsJoined
+      createdCount: formattedCreated.length,
+      joinedCount: formattedJoined.length,
+      groups: formattedJoined,
+      groupsCreated: formattedCreated,
+      groupsJoined: formattedJoined
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --- Group Member Privacy Controller ---
+const getGroupMembers = async (req, res, next) => {
+  try {
+    const { groupId } = req.params;
+    const studentId = req.student._id;
+
+    const group = await Group.findById(groupId)
+      .populate('createdBy', 'name email department semester')
+      .populate('members', 'name email department semester academicInterests subjects');
+
+    if (!group) {
+      return res.status(404).json({ success: false, message: 'Study group not found.' });
+    }
+
+    const isMember = GroupManager.isStudentMember(group, studentId) ||
+      (group.createdBy && (group.createdBy._id ? group.createdBy._id.toString() : group.createdBy.toString()) === studentId.toString());
+
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'Member list visible after joining the group.'
+      });
+    }
+
+    const members = (group.members || []).map(m => ({
+      _id: m._id,
+      name: m.name,
+      email: m.email,
+      department: m.department || group.department || 'Computer Science & Engineering',
+      semester: m.semester || group.semester || 'S3',
+      academicInterests: (m.academicInterests && m.academicInterests.length > 0) ? m.academicInterests : (m.subjects || []),
+      isCreator: group.createdBy && (group.createdBy._id ? group.createdBy._id.toString() : group.createdBy.toString()) === m._id.toString()
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count: members.length,
+      groupName: group.groupName,
+      subject: group.subject,
+      department: group.department,
+      semester: group.semester,
+      maxMembers: group.maxMembers,
+      members
     });
   } catch (error) {
     next(error);
@@ -1339,20 +1518,90 @@ const getSessions = async (req, res, next) => {
     const userGroups = await Group.find({ members: studentId }).select('_id');
     const groupIds = userGroups.map(g => g._id);
 
-    const sessions = await Session.find({ groupId: { $in: groupIds } })
+    // Fetch all sessions belonging to student's groups
+    const allSessions = await Session.find({ groupId: { $in: groupIds } })
       .populate('groupId', 'groupName subject')
-      .populate('createdBy', 'name email')
-      .sort({ date: 1, time: 1 });
+      .populate('createdBy', 'name email');
+
+    const expiredIds = [];
+    const upcomingSessions = [];
+
+    // Automatically detect and clear sessions after their date and time
+    for (const s of allSessions) {
+      if (SessionScheduler.isSessionExpired(s)) {
+        expiredIds.push(s._id);
+      } else {
+        upcomingSessions.push(s);
+      }
+    }
+
+    if (expiredIds.length > 0) {
+      await Session.deleteMany({ _id: { $in: expiredIds } });
+      console.log(`[Auto-Clean] Successfully cleared ${expiredIds.length} expired study session(s) after their date & time.`);
+    }
+
+    // Sort upcoming sessions chronologically
+    upcomingSessions.sort((a, b) => {
+      const tA = SessionScheduler.parseSessionDateTime(a.date, a.time)?.getTime() || 0;
+      const tB = SessionScheduler.parseSessionDateTime(b.date, b.time)?.getTime() || 0;
+      return tA - tB;
+    });
 
     return res.status(200).json({
       success: true,
-      count: sessions.length,
-      sessions
+      count: upcomingSessions.length,
+      clearedExpiredCount: expiredIds.length,
+      sessions: upcomingSessions
     });
   } catch (error) {
     next(error);
   }
 };
+
+const clearExpiredSessions = async (req, res, next) => {
+  try {
+    const allSessions = await Session.find({});
+    const expiredIds = allSessions
+      .filter(s => SessionScheduler.isSessionExpired(s))
+      .map(s => s._id);
+
+    if (expiredIds.length > 0) {
+      await Session.deleteMany({ _id: { $in: expiredIds } });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Cleared ${expiredIds.length} expired study session(s).`,
+      clearedCount: expiredIds.length
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Background recurring task: Automatically clears expired sessions from MongoDB
+const runExpiredSessionsCleaner = async () => {
+  try {
+    const allSessions = await Session.find({});
+    const expiredIds = allSessions
+      .filter(s => SessionScheduler.isSessionExpired(s))
+      .map(s => s._id);
+
+    if (expiredIds.length > 0) {
+      await Session.deleteMany({ _id: { $in: expiredIds } });
+      console.log(`[Scheduled Cleaner] Automatically purged ${expiredIds.length} expired study session(s) past date & time.`);
+    }
+  } catch (err) {
+    console.error('[Scheduled Cleaner Error]', err.message);
+  }
+};
+
+if (mongoose.connection.readyState === 1) {
+  runExpiredSessionsCleaner();
+} else {
+  mongoose.connection.once('open', runExpiredSessionsCleaner);
+}
+setInterval(runExpiredSessionsCleaner, 2 * 60 * 1000);
 
 // --- 5.5 Notifications Controllers ---
 const getNotifications = async (req, res, next) => {
@@ -1884,6 +2133,7 @@ app.get('/profile', protect, getProfile);
 app.put('/profile', protect, updateProfile);
 
 app.get('/groups', optionalAuth, getGroups);
+app.get('/groups/:groupId/members', protect, getGroupMembers);
 app.post('/groups', protect, createGroup);
 app.post('/groups/join', protect, joinGroup);
 app.post('/groups/leave', protect, leaveGroup);
@@ -1891,6 +2141,7 @@ app.get('/my-groups', protect, getMyGroups);
 
 app.post('/session/create', protect, createSession);
 app.get('/sessions', protect, getSessions);
+app.delete('/sessions/expired', protect, clearExpiredSessions);
 
 app.get('/notifications', protect, getNotifications);
 app.put('/notifications/:id/read', protect, markAsRead);
@@ -1911,6 +2162,7 @@ app.get('/api/profile', protect, getProfile);
 app.put('/api/profile', protect, updateProfile);
 
 app.get('/api/groups', optionalAuth, getGroups);
+app.get('/api/groups/:groupId/members', protect, getGroupMembers);
 app.post('/api/groups', protect, createGroup);
 app.post('/api/groups/join', protect, joinGroup);
 app.post('/api/groups/leave', protect, leaveGroup);
@@ -1919,6 +2171,7 @@ app.get('/api/my-groups', protect, getMyGroups);
 app.post('/api/sessions', protect, createSession);
 app.post('/api/sessions/create', protect, createSession);
 app.get('/api/sessions', protect, getSessions);
+app.delete('/api/sessions/expired', protect, clearExpiredSessions);
 
 app.get('/api/notifications', protect, getNotifications);
 app.put('/api/notifications/:id/read', protect, markAsRead);

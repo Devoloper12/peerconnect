@@ -46,6 +46,7 @@ import {
 import { useAuth } from './context/AuthContext';
 import { useNotifications } from './context/NotificationContext';
 import { getMyGroupsApi, getSessionsApi, updateProfileApi } from './api/client';
+import { GroupMembersModal } from './Groups';
 import {
   ACADEMIC_INTERESTS,
   LEARNING_PREFERENCES,
@@ -57,6 +58,46 @@ import {
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 
+// Helper: Checks if a session's scheduled date and time is still in the future
+export const isSessionUpcoming = (session) => {
+  if (!session || !session.date) return false;
+  let year, monthIndex, day;
+  const str = session.date instanceof Date ? session.date.toISOString() : String(session.date);
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    year = parseInt(match[1], 10);
+    monthIndex = parseInt(match[2], 10) - 1;
+    day = parseInt(match[3], 10);
+  } else {
+    const d = new Date(session.date);
+    if (isNaN(d.getTime())) return false;
+    year = d.getFullYear();
+    monthIndex = d.getMonth();
+    day = d.getDate();
+  }
+
+  let hours = 23;
+  let minutes = 59;
+  if (session.time && typeof session.time === 'string' && session.time.trim().length > 0) {
+    const trimmed = session.time.trim().toUpperCase();
+    const isPM = trimmed.includes('PM');
+    const isAM = trimmed.includes('AM');
+    const cleaned = trimmed.replace(/[APM\s]/g, '');
+    const parts = cleaned.split(':');
+    if (parts.length >= 2) {
+      let h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      if (isPM && h < 12) h += 12;
+      else if (isAM && h === 12) h = 0;
+      hours = h;
+      minutes = m;
+    }
+  }
+
+  const sessionDt = new Date(year, monthIndex, day, hours, minutes, 0, 0);
+  return sessionDt.getTime() >= Date.now();
+};
+
 // ============================================================================
 // 1. STUDENT DASHBOARD COMPONENT
 // ============================================================================
@@ -67,6 +108,7 @@ export function StudentDashboard() {
   const [myGroups, setMyGroups] = useState([]);
   const [upcomingSessions, setUpcomingSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [membersModalGroup, setMembersModalGroup] = useState(null);
 
   useEffect(() => {
     loadDashboard();
@@ -84,7 +126,8 @@ export function StudentDashboard() {
         setMyGroups(gRes.value.data.groupsJoined || []);
       }
       if (sRes.status === 'fulfilled' && sRes.value?.data) {
-        setUpcomingSessions(sRes.value.data.sessions || []);
+        const activeSessions = (sRes.value.data.sessions || []).filter(isSessionUpcoming);
+        setUpcomingSessions(activeSessions);
       }
     } catch (err) {
       console.warn('Dashboard loading notice:', err);
@@ -362,6 +405,14 @@ export function StudentDashboard() {
                       <Button 
                         type="default" 
                         size="small" 
+                        icon={<TeamOutlined />}
+                        onClick={() => setMembersModalGroup(grp)}
+                      >
+                        Members
+                      </Button>
+                      <Button 
+                        type="default" 
+                        size="small" 
                         icon={<MessageOutlined />}
                         onClick={() => navigate(`/chats?type=GROUP&id=${grp._id || grp.id}`)}
                       >
@@ -460,13 +511,13 @@ export function StudentDashboard() {
           >
             {loading ? (
               <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
-            ) : upcomingSessions.length === 0 ? (
-              <Empty description="No study sessions scheduled yet.">
+            ) : upcomingSessions.filter(isSessionUpcoming).length === 0 ? (
+              <Empty description="No upcoming study sessions scheduled. Completed sessions are automatically cleared.">
                 <Button size="small" type="primary" onClick={() => navigate('/scheduler')}>Schedule Now</Button>
               </Empty>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {upcomingSessions.slice(0, 4).map(s => (
+                {upcomingSessions.filter(isSessionUpcoming).slice(0, 4).map(s => (
                   <div 
                     key={s._id || s.id}
                     style={{
@@ -518,6 +569,13 @@ export function StudentDashboard() {
           </Card>
         </Col>
       </Row>
+
+      {/* Group Members Details Modal */}
+      <GroupMembersModal
+        group={membersModalGroup}
+        open={!!membersModalGroup}
+        onClose={() => setMembersModalGroup(null)}
+      />
     </div>
   );
 }

@@ -48,10 +48,12 @@ export const createGroupApi = (data) => client.post('/groups', data);
 export const joinGroupApi = (groupId) => client.post('/groups/join', { groupId });
 export const leaveGroupApi = (groupId) => client.post('/groups/leave', { groupId });
 export const getMyGroupsApi = () => client.get('/my-groups');
+export const getGroupMembersApi = (groupId) => client.get(`/groups/${groupId}/members`);
 
 // --- Session APIs ---
 export const createSessionApi = (data) => client.post('/session/create', data);
 export const getSessionsApi = () => client.get('/sessions');
+export const clearExpiredSessionsApi = () => client.delete('/sessions/expired');
 
 // --- Notifications APIs ---
 export const getNotificationsApi = () => client.get('/notifications');

@@ -52,7 +52,11 @@ import {
   FileImageOutlined,
   FileTextOutlined,
   FileZipOutlined,
-  UsergroupAddOutlined
+  UsergroupAddOutlined,
+  LockOutlined,
+  UnlockOutlined,
+  EyeOutlined,
+  BankOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -65,7 +69,8 @@ import {
   getSessionsApi,
   getConversationsApi,
   getMessagesApi,
-  sendMessageApi
+  sendMessageApi,
+  getGroupMembersApi
 } from './api/client';
 import { useAuth } from './context/AuthContext';
 import { ACADEMIC_INTERESTS, DEPARTMENTS, SEMESTERS } from './constants/academicData';
@@ -73,6 +78,202 @@ import { ACADEMIC_INTERESTS, DEPARTMENTS, SEMESTERS } from './constants/academic
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
+
+// ============================================================================
+// STUDY GROUP MEMBERS MODAL (PRIVACY-ENFORCED)
+// Only accessible to enrolled group members
+// ============================================================================
+export function GroupMembersModal({ group, open, onClose }) {
+  const [members, setMembers] = useState([]);
+  const [currentGroup, setCurrentGroup] = useState(group);
+  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!open || !group) {
+      setMembers([]);
+      setCurrentGroup(null);
+      return;
+    }
+
+    setCurrentGroup(group);
+
+    // If members with details are already provided on the group object
+    if (group.members && group.members.length > 0 && group.members[0].department) {
+      setMembers(group.members);
+      return;
+    }
+
+    const loadMembers = async () => {
+      try {
+        setLoading(true);
+        const gId = group._id || group.id;
+        const res = await getGroupMembersApi(gId);
+        setMembers(res.data?.members || []);
+        if (res.data) {
+          setCurrentGroup(prev => ({
+            ...(prev || group),
+            groupName: res.data.groupName || prev?.groupName || group.groupName || group.title,
+            subject: res.data.subject || prev?.subject || group.subject || group.subtitle,
+            department: res.data.department || prev?.department || group.department,
+            semester: res.data.semester || prev?.semester || group.semester,
+            maxMembers: res.data.maxMembers || prev?.maxMembers || group.maxMembers
+          }));
+        }
+      } catch (err) {
+        const msg = err.response?.data?.message || 'Member list visible after joining the group.';
+        antMessage.warning(msg);
+        onClose();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMembers();
+  }, [open, group]);
+
+  if (!open || (!group && !currentGroup)) return null;
+
+  const displayGroup = currentGroup || group;
+  const maxCount = displayGroup.maxMembers || 8;
+  const count = members.length || displayGroup.memberCount || (displayGroup.members || []).length || 0;
+
+  return (
+    <Modal
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#1e3a8a', fontWeight: 800 }}>
+          <TeamOutlined style={{ color: '#1d4ed8' }} />
+          <span>Study Group Members — {displayGroup.groupName || displayGroup.title || 'Study Group'}</span>
+        </div>
+      }
+      open={open}
+      onCancel={onClose}
+      width={640}
+      footer={[
+        <Button
+          key="chat"
+          type="primary"
+          icon={<MessageOutlined />}
+          onClick={() => {
+            const gId = displayGroup._id || displayGroup.id;
+            onClose();
+            navigate(`/chats?type=GROUP&id=${gId}`);
+          }}
+        >
+          Open Group Chat
+        </Button>,
+        <Button key="close" onClick={onClose}>
+          Close
+        </Button>
+      ]}
+    >
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Tag color="blue">{displayGroup.subject || displayGroup.subtitle || 'Study Circle'}</Tag>
+        <Tag color="cyan">Semester {displayGroup.semester || 'S3'}</Tag>
+        <Tag color="geekblue">{displayGroup.department || 'Computer Science & Engineering'}</Tag>
+        <Tag color="green" style={{ fontWeight: 600 }}>
+          👥 {count} / {maxCount} Enrolled
+        </Tag>
+      </div>
+
+      <div style={{
+        background: '#f0fdf4',
+        border: '1px solid #bbf7d0',
+        borderRadius: 8,
+        padding: '10px 14px',
+        marginBottom: 16,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        fontSize: 12,
+        color: '#15803d'
+      }}>
+        <UnlockOutlined style={{ fontSize: 16 }} />
+        <span>
+          <strong>Group Member Access Unlocked:</strong> Showing complete verified member list with academic profiles.
+        </span>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
+      ) : members.length === 0 ? (
+        <Empty description="No members found in this group." />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+          {members.map((member, idx) => {
+            const mId = member._id || member.id || member;
+            const isCreator = member.isCreator || (group.createdBy && (group.createdBy._id || group.createdBy.id || group.createdBy).toString() === mId.toString());
+            const isCurrentUser = user && (user.id || user._id || '').toString() === mId.toString();
+            const interests = (member.academicInterests && member.academicInterests.length > 0)
+              ? member.academicInterests
+              : (member.subjects && member.subjects.length > 0 ? member.subjects : [group.subject || 'Computer Science']);
+
+            return (
+              <Card
+                key={mId || idx}
+                size="small"
+                className="academic-card"
+                style={{
+                  borderRadius: 8,
+                  border: isCurrentUser ? '1.5px solid #93c5fd' : '1px solid #e2e8f0',
+                  background: isCurrentUser ? '#f8fafc' : '#ffffff'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <Avatar size={42} style={{ backgroundColor: isCreator ? '#d97706' : '#1d4ed8', fontWeight: 700 }}>
+                      {member.name ? member.name.charAt(0).toUpperCase() : 'M'}
+                    </Avatar>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 800, fontSize: 15, color: '#1e3a8a' }}>
+                          {member.name || 'Student Member'}
+                        </span>
+                        {isCreator && (
+                          <Tag color="gold" style={{ margin: 0, fontSize: 11, fontWeight: 700 }}>
+                            ★ Group Leader
+                          </Tag>
+                        )}
+                        {isCurrentUser && (
+                          <Tag color="blue" style={{ margin: 0, fontSize: 11, fontWeight: 600 }}>
+                            You
+                          </Tag>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                        <span>{member.department || group.department || 'Computer Science & Engineering'}</span>
+                        <span style={{ margin: '0 6px' }}>•</span>
+                        <span>Semester: <strong>{member.semester || group.semester || 'S3'}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 10, borderTop: '1px solid #f1f5f9', paddingTop: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 4 }}>
+                    Academic Interests:
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {interests.map(interest => (
+                      <Tag
+                        key={interest}
+                        color="blue"
+                        style={{ margin: 0, fontSize: 11, fontWeight: 600, borderRadius: 4 }}
+                      >
+                        {interest}
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </Modal>
+  );
+}
 
 // ============================================================================
 // 1. STUDY GROUP EXPLORER & JOIN COMPONENT
@@ -83,6 +284,7 @@ export function StudyGroupPage() {
   const [search, setSearch] = useState('');
   const [subject, setSubject] = useState('ALL');
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const [membersModalGroup, setMembersModalGroup] = useState(null);
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -114,7 +316,7 @@ export function StudyGroupPage() {
     }
     try {
       await joinGroupApi(groupId);
-      antMessage.success('Joined study group successfully!');
+      antMessage.success('Joined study group successfully! Member list is now unlocked.');
       fetchGroups();
     } catch (err) {
       const msg = err.response?.data?.message || 'Could not join group.';
@@ -197,13 +399,19 @@ export function StudyGroupPage() {
       ) : (
         <Row gutter={[20, 20]}>
           {groups.map(grp => {
-            const memberCount = (grp.members || []).length;
+            const memberCount = grp.memberCount !== undefined ? grp.memberCount : (grp.members || []).length;
             const maxCount = grp.maxMembers || 8;
             const isFull = grp.isFull || memberCount >= maxCount;
-            const isMember = user && (grp.members || []).some(m => {
-              const mId = m._id || m.id || m;
-              return mId.toString() === (user.id || user._id || '').toString();
-            });
+            const isMember = Boolean(
+              grp.isMember ||
+              (user && (
+                (grp.members || []).some(m => {
+                  const mId = m._id || m.id || m;
+                  return mId.toString() === (user.id || user._id || '').toString();
+                }) ||
+                (grp.createdBy && (grp.createdBy._id || grp.createdBy.id || grp.createdBy).toString() === (user.id || user._id || '').toString())
+              ))
+            );
             const matchScore = grp.matchScore || 75;
 
             return (
@@ -255,40 +463,98 @@ export function StudyGroupPage() {
                   </div>
 
                   <div style={{ marginTop: 16, borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', marginBottom: 8 }}>
                       <span>Led by: <strong>{grp.createdBy?.name || 'Student'}</strong></span>
                       <span><strong>{memberCount} / {maxCount}</strong> Enrolled</span>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <Button 
-                        style={{ flex: 1 }} 
-                        size="small"
-                        onClick={() => setSelectedGroup(grp)}
-                      >
-                        Details
-                      </Button>
-
-                      <Button 
-                        type={isMember ? "default" : "primary"} 
-                        size="small" 
-                        style={{ 
-                          flex: 1,
-                          borderColor: isMember ? '#1d4ed8' : undefined,
-                          color: isMember ? '#1d4ed8' : undefined,
-                          fontWeight: isMember ? 700 : 500
-                        }} 
-                        disabled={!isMember && isFull}
-                        onClick={() => {
-                          if (isMember) {
-                            navigate(`/chats?type=GROUP&id=${grp._id || grp.id}`);
-                          } else {
-                            handleJoin(grp._id || grp.id);
-                          }
+                    {/* Study Group Privacy Banner */}
+                    {!isMember ? (
+                      <div 
+                        style={{
+                          fontSize: 12,
+                          color: '#64748b',
+                          background: '#f8fafc',
+                          padding: '6px 10px',
+                          borderRadius: 6,
+                          border: '1px dashed #cbd5e1',
+                          marginBottom: 10,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
                         }}
                       >
-                        {isMember ? '💬 Open Chat' : isFull ? 'Full' : 'Join Group'}
-                      </Button>
+                        <LockOutlined style={{ color: '#94a3b8' }} />
+                        <span>Member list visible after joining the group.</span>
+                      </div>
+                    ) : (
+                      <div 
+                        style={{
+                          fontSize: 12,
+                          color: '#15803d',
+                          background: '#f0fdf4',
+                          padding: '6px 10px',
+                          borderRadius: 6,
+                          border: '1px solid #bbf7d0',
+                          marginBottom: 10,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                          <CheckCircleOutlined style={{ color: '#16a34a' }} />
+                          Enrolled Member
+                        </span>
+                        <Tag color="green" style={{ margin: 0, fontSize: 11, fontWeight: 600 }}>
+                          <UnlockOutlined style={{ marginRight: 3 }} />
+                          Members Unlocked
+                        </Tag>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {isMember ? (
+                        <>
+                          <Button 
+                            style={{ flex: 1, borderColor: '#1d4ed8', color: '#1d4ed8', fontWeight: 600 }} 
+                            size="small"
+                            icon={<TeamOutlined />}
+                            onClick={() => setMembersModalGroup(grp)}
+                          >
+                            View Members
+                          </Button>
+
+                          <Button 
+                            type="primary" 
+                            size="small" 
+                            style={{ flex: 1 }}
+                            onClick={() => navigate(`/chats?type=GROUP&id=${grp._id || grp.id}`)}
+                          >
+                            💬 Open Chat
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button 
+                            style={{ flex: 1 }} 
+                            size="small"
+                            onClick={() => setSelectedGroup(grp)}
+                          >
+                            Details
+                          </Button>
+
+                          <Button 
+                            type="primary" 
+                            size="small" 
+                            style={{ flex: 1 }} 
+                            disabled={isFull}
+                            onClick={() => handleJoin(grp._id || grp.id)}
+                          >
+                            {isFull ? 'Full' : 'Join Group'}
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -298,65 +564,219 @@ export function StudyGroupPage() {
         </Row>
       )}
 
-      {/* Details Modal */}
-      {selectedGroup && (
-        <Modal
-          title={
-            <div style={{ color: '#1e3a8a', fontWeight: 700 }}>
-              📘 {selectedGroup.groupName}
+      {/* Details Modal (Privacy-enforced) */}
+      {selectedGroup && (() => {
+        const selMemberCount = selectedGroup.memberCount !== undefined ? selectedGroup.memberCount : (selectedGroup.members || []).length;
+        const selMaxCount = selectedGroup.maxMembers || 8;
+        const isSelFull = selectedGroup.isFull || selMemberCount >= selMaxCount;
+        const isSelMember = Boolean(
+          selectedGroup.isMember ||
+          (user && (
+            (selectedGroup.members || []).some(m => {
+              const mId = m._id || m.id || m;
+              return mId.toString() === (user.id || user._id || '').toString();
+            }) ||
+            (selectedGroup.createdBy && (selectedGroup.createdBy._id || selectedGroup.createdBy.id || selectedGroup.createdBy).toString() === (user.id || user._id || '').toString())
+          ))
+        );
+
+        return (
+          <Modal
+            title={
+              <div style={{ color: '#1e3a8a', fontWeight: 700 }}>
+                📘 {selectedGroup.groupName}
+              </div>
+            }
+            open={!!selectedGroup}
+            onCancel={() => setSelectedGroup(null)}
+            footer={[
+              isSelMember && (
+                <Button
+                  key="view"
+                  type="default"
+                  icon={<TeamOutlined />}
+                  onClick={() => {
+                    const g = selectedGroup;
+                    setSelectedGroup(null);
+                    setMembersModalGroup(g);
+                  }}
+                >
+                  View Members
+                </Button>
+              ),
+              isSelMember ? (
+                <Button
+                  key="chat"
+                  type="primary"
+                  icon={<MessageOutlined />}
+                  onClick={() => {
+                    const gId = selectedGroup._id || selectedGroup.id;
+                    setSelectedGroup(null);
+                    navigate(`/chats?type=GROUP&id=${gId}`);
+                  }}
+                >
+                  Open Group Chat
+                </Button>
+              ) : (
+                <Button
+                  key="join"
+                  type="primary"
+                  disabled={isSelFull}
+                  onClick={() => {
+                    const gId = selectedGroup._id || selectedGroup.id;
+                    setSelectedGroup(null);
+                    handleJoin(gId);
+                  }}
+                >
+                  {isSelFull ? 'Group is Full' : 'Join Group'}
+                </Button>
+              ),
+              <Button key="close" type="default" onClick={() => setSelectedGroup(null)}>
+                Close
+              </Button>
+            ].filter(Boolean)}
+          >
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <Tag color="blue">{selectedGroup.subject}</Tag>
+              <Tag color="cyan">Semester {selectedGroup.semester || 'S3'}</Tag>
+              <Tag color="geekblue">{selectedGroup.department || 'Computer Science & Engineering'}</Tag>
+              {user && (
+                <Tag color="green" style={{ fontWeight: 700 }}>
+                  {selectedGroup.matchScore || 75}% Compatibility Match
+                </Tag>
+              )}
             </div>
-          }
-          open={!!selectedGroup}
-          onCancel={() => setSelectedGroup(null)}
-          footer={[
-            user && (selectedGroup.members || []).some(m => ((m._id || m.id || m).toString() === (user.id || user._id || '').toString())) && (
-              <Button
-                key="chat"
-                type="primary"
-                icon={<MessageOutlined />}
-                onClick={() => {
-                  const gId = selectedGroup._id || selectedGroup.id;
-                  setSelectedGroup(null);
-                  navigate(`/chats?type=GROUP&id=${gId}`);
+
+            <Paragraph style={{ color: '#334155', fontSize: 14 }}>
+              {selectedGroup.description}
+            </Paragraph>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', marginTop: 12, marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Department & Semester</div>
+                <div style={{ fontSize: 13, color: '#1e293b', fontWeight: 600 }}>
+                  {selectedGroup.department || 'Computer Science & Engineering'} • Semester {selectedGroup.semester || 'S3'}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Member Capacity</div>
+                <div style={{ fontSize: 13, color: '#1d4ed8', fontWeight: 700 }}>
+                  {selMemberCount} / {selMaxCount} Enrolled
+                </div>
+              </div>
+            </div>
+
+            {/* Privacy Section: Before joining vs After joining */}
+            {!isSelMember ? (
+              <div 
+                style={{
+                  background: '#f8fafc',
+                  border: '1px dashed #cbd5e1',
+                  borderRadius: 8,
+                  padding: '18px 20px',
+                  textAlign: 'center',
+                  marginTop: 14
                 }}
               >
-                Open Group Chat
-              </Button>
-            ),
-            <Button key="close" type="default" onClick={() => setSelectedGroup(null)}>
-              Close
-            </Button>
-          ]}
-        >
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-            <Tag color="blue">{selectedGroup.subject}</Tag>
-            <Tag color="cyan">{selectedGroup.semester || 'S3'}</Tag>
-            <Tag color="geekblue">{selectedGroup.department || 'Computer Science & Engineering'}</Tag>
-            {user && (
-              <Tag color="green" style={{ fontWeight: 700 }}>
-                {selectedGroup.matchScore || 75}% Compatibility Match
-              </Tag>
+                <LockOutlined style={{ fontSize: 26, color: '#64748b', marginBottom: 8 }} />
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#334155' }}>
+                  Member list visible after joining the group.
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                  Only group members can access the member list and view student profiles.
+                </div>
+                <Button
+                  type="primary"
+                  style={{ marginTop: 12 }}
+                  disabled={isSelFull}
+                  onClick={() => {
+                    const gId = selectedGroup._id || selectedGroup.id;
+                    setSelectedGroup(null);
+                    handleJoin(gId);
+                  }}
+                >
+                  {isSelFull ? 'Group is Full' : 'Join Group to Unlock Member List'}
+                </Button>
+              </div>
+            ) : (
+              <div style={{ marginTop: 14 }}>
+                <div 
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: '#f0fdf4',
+                    border: '1px solid #bbf7d0',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    marginBottom: 12
+                  }}
+                >
+                  <span style={{ fontSize: 13, color: '#15803d', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <UnlockOutlined />
+                    Enrolled Member • Full Member Access
+                  </span>
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<TeamOutlined />}
+                    onClick={() => {
+                      const g = selectedGroup;
+                      setSelectedGroup(null);
+                      setMembersModalGroup(g);
+                    }}
+                  >
+                    View Members
+                  </Button>
+                </div>
+
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>
+                  Enrolled Group Members:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+                  {(selectedGroup.members || []).map((m, idx) => (
+                    <div
+                      key={m._id || idx}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '8px 12px',
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 6
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700, color: '#1e3a8a', fontSize: 13 }}>
+                          👤 {m.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#64748b' }}>
+                          {m.department || selectedGroup.department} • Semester {m.semester || selectedGroup.semester}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 220 }}>
+                        {((m.academicInterests && m.academicInterests.length > 0) ? m.academicInterests : (m.subjects || [])).slice(0, 3).map(sub => (
+                          <Tag key={sub} color="blue" style={{ fontSize: 10, margin: 0 }}>
+                            {sub}
+                          </Tag>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
-          </div>
+          </Modal>
+        );
+      })()}
 
-          <Paragraph style={{ color: '#334155', fontSize: 14 }}>
-            {selectedGroup.description}
-          </Paragraph>
-
-          <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, marginTop: 12, border: '1px solid #e2e8f0' }}>
-            <div style={{ color: '#475569', fontSize: 13, marginBottom: 6 }}>
-              <strong>Enrolled Students:</strong> {(selectedGroup.members || []).length} of {selectedGroup.maxMembers || 8}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {(selectedGroup.members || []).map((m, idx) => (
-                <Tag key={idx} color="default">
-                  👤 {m.name || 'Member'}
-                </Tag>
-              ))}
-            </div>
-          </div>
-        </Modal>
-      )}
+      {/* Full Members Details Modal */}
+      <GroupMembersModal
+        group={membersModalGroup}
+        open={!!membersModalGroup}
+        onClose={() => setMembersModalGroup(null)}
+      />
     </div>
   );
 }
@@ -568,6 +988,7 @@ export function MyGroupsPage() {
   const [createdGroups, setCreatedGroups] = useState([]);
   const [joinedGroups, setJoinedGroups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [membersModalGroup, setMembersModalGroup] = useState(null);
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -665,7 +1086,16 @@ export function MyGroupsPage() {
                             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
                               👥 {(grp.members || []).length} / {grp.maxMembers || 10} members enrolled
                             </div>
-                            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                            <Space style={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                              <Button 
+                                type="default" 
+                                size="small" 
+                                icon={<TeamOutlined />}
+                                onClick={() => setMembersModalGroup(grp)}
+                              >
+                                View Members
+                              </Button>
+
                               <Button 
                                 type="primary" 
                                 size="small" 
@@ -737,15 +1167,27 @@ export function MyGroupsPage() {
                             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
                               👥 {(grp.members || []).length} / {grp.maxMembers || 10} members enrolled
                             </div>
-                            <Button 
-                              type="primary" 
-                              size="small" 
-                              block
-                              icon={<CalendarOutlined />}
-                              onClick={() => navigate('/scheduler')}
-                            >
-                              Schedule Group Walkthrough
-                            </Button>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <Button 
+                                type="default" 
+                                size="small" 
+                                style={{ flex: 1 }}
+                                icon={<TeamOutlined />}
+                                onClick={() => setMembersModalGroup(grp)}
+                              >
+                                View Members
+                              </Button>
+
+                              <Button 
+                                type="primary" 
+                                size="small" 
+                                style={{ flex: 1 }}
+                                icon={<CalendarOutlined />}
+                                onClick={() => navigate('/scheduler')}
+                              >
+                                Schedule
+                              </Button>
+                            </div>
                           </div>
                         </Card>
                       </Col>
@@ -756,6 +1198,13 @@ export function MyGroupsPage() {
             )
           }
         ]}
+      />
+
+      {/* Full Members Details Modal */}
+      <GroupMembersModal
+        group={membersModalGroup}
+        open={!!membersModalGroup}
+        onClose={() => setMembersModalGroup(null)}
       />
     </div>
   );
@@ -782,6 +1231,46 @@ export function SessionSchedulerPage() {
   ]);
   const [customTimeInput, setCustomTimeInput] = useState('');
 
+  // Helper: Checks if a session's scheduled date and time is still upcoming
+  const isSessionUpcoming = (session) => {
+    if (!session || !session.date) return false;
+    let year, monthIndex, day;
+    const str = session.date instanceof Date ? session.date.toISOString() : String(session.date);
+    const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      year = parseInt(match[1], 10);
+      monthIndex = parseInt(match[2], 10) - 1;
+      day = parseInt(match[3], 10);
+    } else {
+      const d = new Date(session.date);
+      if (isNaN(d.getTime())) return false;
+      year = d.getFullYear();
+      monthIndex = d.getMonth();
+      day = d.getDate();
+    }
+
+    let hours = 23;
+    let minutes = 59;
+    if (session.time && typeof session.time === 'string' && session.time.trim().length > 0) {
+      const trimmed = session.time.trim().toUpperCase();
+      const isPM = trimmed.includes('PM');
+      const isAM = trimmed.includes('AM');
+      const cleaned = trimmed.replace(/[APM\s]/g, '');
+      const parts = cleaned.split(':');
+      if (parts.length >= 2) {
+        let h = parseInt(parts[0], 10) || 0;
+        const m = parseInt(parts[1], 10) || 0;
+        if (isPM && h < 12) h += 12;
+        else if (isAM && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+
+    const sessionDt = new Date(year, monthIndex, day, hours, minutes, 0, 0);
+    return sessionDt.getTime() >= Date.now();
+  };
+
   useEffect(() => {
     loadData();
   }, []);
@@ -793,7 +1282,10 @@ export function SessionSchedulerPage() {
         getSessionsApi(),
         getMyGroupsApi()
       ]);
-      if (sRes.status === 'fulfilled') setSessions(sRes.value.data?.sessions || []);
+      if (sRes.status === 'fulfilled') {
+        const activeSessions = (sRes.value.data?.sessions || []).filter(isSessionUpcoming);
+        setSessions(activeSessions);
+      }
       if (gRes.status === 'fulfilled') setUserGroups(gRes.value.data?.groupsJoined || []);
     } catch (err) {
       console.warn('Scheduler data notice:', err);
@@ -995,19 +1487,22 @@ export function SessionSchedulerPage() {
           <Card 
             className="academic-card" 
             title={
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                 <span style={{ color: '#1e3a8a' }}>📅 Upcoming Scheduled Sessions</span>
-                <Tag color="blue">{sessions.length} Sessions</Tag>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <Tag color="blue">{sessions.filter(isSessionUpcoming).length} Active</Tag>
+                  <Tag color="green">Auto-Cleared Past Sessions</Tag>
+                </div>
               </div>
             }
           >
             {fetching ? (
               <div style={{ textAlign: 'center', padding: 30 }}><Spin /></div>
-            ) : sessions.length === 0 ? (
-              <Empty description="No upcoming study sessions scheduled yet." />
+            ) : sessions.filter(isSessionUpcoming).length === 0 ? (
+              <Empty description="No upcoming study sessions scheduled yet. Completed sessions are automatically cleared once their date and time pass." />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {sessions.map(s => (
+                {sessions.filter(isSessionUpcoming).map(s => (
                   <div 
                     key={s._id || s.id}
                     style={{ 
@@ -1112,6 +1607,9 @@ export function ChatsPage() {
 
   // New Chat Modal state
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
+
+  // Group Members Modal state (for View Members button in group chat header)
+  const [membersModalOpen, setMembersModalOpen] = useState(false);
 
   // Auto-scroll ref
   const messagesEndRef = useRef(null);
@@ -1729,9 +2227,26 @@ export function ChatsPage() {
                 </div>
 
                 {activeChat.chatType === 'GROUP' && (
-                  <Button size="small" type="default" onClick={() => navigate('/scheduler')} style={{ flexShrink: 0 }}>
-                    🗓️ <span className="desktop-only">Schedule</span>
-                  </Button>
+                  <Space style={{ flexShrink: 0 }} wrap>
+                    <Button 
+                      size="small" 
+                      type="primary" 
+                      icon={<TeamOutlined />} 
+                      onClick={() => setMembersModalOpen(true)}
+                      style={{ fontWeight: 600 }}
+                    >
+                      <span className="desktop-only">View Members</span>
+                      <span className="mobile-only">Members</span>
+                    </Button>
+                    <Button 
+                      size="small" 
+                      type="default" 
+                      icon={<CalendarOutlined />} 
+                      onClick={() => navigate('/scheduler')}
+                    >
+                      <span className="desktop-only">Schedule</span>
+                    </Button>
+                  </Space>
                 )}
               </div>
 
@@ -2249,6 +2764,22 @@ export function ChatsPage() {
           ]}
         />
       </Modal>
+
+      {/* Group Members Modal inside Chat */}
+      {activeChat && activeChat.chatType === 'GROUP' && (
+        <GroupMembersModal
+          group={
+            groupChats.find(g => (g.id || g._id) === activeChat.targetId) || {
+              _id: activeChat.targetId,
+              id: activeChat.targetId,
+              groupName: activeChat.title,
+              subject: activeChat.subtitle
+            }
+          }
+          open={membersModalOpen}
+          onClose={() => setMembersModalOpen(false)}
+        />
+      )}
     </div>
   );
 }
